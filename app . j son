@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "M&A Services",
+    "slug": "manda-services",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mabusiness.maservices",
+      "buildNumber": "1"
+    }
+  }
+}
