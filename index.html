@@ -1517,9 +1517,15 @@ const MARKET_FLOW_STEPS=[
   ['seller_paid','Vendeur payé','Seller paid'],
   ['commission_retained','Commission M&A conservée','M&A fee retained']
 ];
-function marketText(fr,en){return localStorage.getItem('ma_lang')==='en'?en:fr}
+function marketLang(){
+  const visibleProviderTab=document.getElementById('tab-provider')?.textContent.trim();
+  if(visibleProviderTab==='Prestataire')return 'fr';
+  if(visibleProviderTab==='Provider')return 'en';
+  return document.documentElement.lang==='en'?'en':'fr';
+}
+function marketText(fr,en){return marketLang()==='en'?en:fr}
 function marketStatusLabel(value, kind='order'){
-  const lang=localStorage.getItem('ma_lang')==='en'?'en':'fr';
+  const lang=marketLang();
   const labels={
     order:{pending:['En attente','Pending'],confirmed:['Confirmée','Confirmed'],completed:['Terminée','Completed'],cancelled:['Annulée','Cancelled']},
     payment:{unpaid:['Non payé','Unpaid'],paid:['Payé','Paid']},
@@ -1562,7 +1568,10 @@ async function loadMarketplaceAdmin(){const box=$('admin-market-products'),order
 $('admin-market-refresh')?.addEventListener('click',loadMarketplaceAdmin);
 $('admin-orders-refresh')?.addEventListener('click',loadMarketplaceAdmin);
 document.querySelector('[data-admin-section="admin-market-orders-section"]')?.addEventListener('click',loadMarketplaceAdmin);
-['lang-fr','lang-en'].forEach(id=>document.getElementById(id)?.addEventListener('click',()=>setTimeout(loadMarketplaceAdmin,0)));
+['lang-fr','lang-en'].forEach(id=>document.getElementById(id)?.addEventListener('click',()=>{
+  currentLang=id==='lang-en'?'en':'fr';
+  setTimeout(loadMarketplaceAdmin,0);
+}));
 new MutationObserver(()=>{if($('admin-market-orders-section')?.classList.contains('active')||$('admin-marketplace-section')?.classList.contains('active'))loadMarketplaceAdmin();if($('marketplace-view')?.classList.contains('active'))loadMarketplaceAccount();}).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});
 
 document.querySelectorAll(".ma-logout").forEach(btn=>btn.addEventListener("click",async()=>{ if(!supabase)return; btn.disabled=true; const {error}=await supabase.auth.signOut(); btn.disabled=false; if(error){alert(error.message);return;} await updateAdminSessionUI(); await updateProviderSessionUI(); await updateClientSessionUI(); await updateMarketplaceUI(); document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active")); document.querySelectorAll(".view").forEach(v=>v.classList.remove("active")); document.getElementById("tab-client")?.classList.add("active"); document.getElementById("client-view")?.classList.add("active"); const m=currentLang==="en"?"Logged out successfully.":"Déconnexion réussie."; const boxes=["client-auth-message","auth-message","transport-auth-msg","agent-login-msg","admin-auth-message"]; boxes.forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=m;}); }));
