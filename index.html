@@ -71,7 +71,14 @@
 </div>
 <p id="client-auth-message" class="form-message"></p>
 </div>
-<div class="panel hidden" id="client-session-panel"><div class="toolbar"><div><strong>Mon compte Client</strong><div id="client-session-email" class="muted"></div></div><button class="danger ma-logout" type="button">Déconnexion / Logout</button></div><p class="muted">Vous êtes connecté. Vous pouvez maintenant envoyer et suivre vos demandes.</p></div>
+<div class="panel hidden" id="client-session-panel"><div class="toolbar"><div><strong>Mon compte Client</strong><div id="client-session-email" class="muted"></div></div><button class="danger ma-logout" type="button">Déconnexion / Logout</button></div><p class="muted">Vous êtes connecté. Vous pouvez maintenant envoyer et suivre vos demandes.</p>
+  <details id="account-deletion-settings"><summary>Paramètres du compte</summary>
+    <h4>Supprimer mon compte M&A Services</h4>
+    <p class="muted">La suppression concerne ce compte dans tous les espaces M&A Services. Votre profil et vos données personnelles seront effacés, sauf les informations que la loi nous oblige à conserver. Une demande en cours sera examinée sous 30 jours; vous recevrez une confirmation lorsque la suppression sera terminée.</p>
+    <button class="danger" id="request-account-deletion" type="button">Demander la suppression de mon compte</button>
+    <p id="account-deletion-message" class="form-message" role="status" aria-live="polite"></p>
+  </details>
+</div>
 <div class="panel hidden" id="client-request-panel"><h3>Faire une demande</h3>
 <p class="muted">Indiquez au moins un moyen de contact : Email/Gmail OU Numéro/WhatsApp. Un seul des deux suffit.</p>
 <form id="client-request-form"><div class="grid2"><label>Nom complet<input name="client_name" required /></label><label>Email / Gmail<input name="client_email" type="email" autocomplete="email" placeholder="votre@gmail.com" /></label></div><div class="grid2"><label>Numéro / WhatsApp<div class="phone-group"><select name="client_phone_code" aria-label="Pays et indicatif" required><option value="+224" selected>🇬🇳 Guinée +224</option>
@@ -329,6 +336,7 @@
   <button type="button" data-admin-section="admin-requests-section">Demandes clients</button>
   <button type="button" data-admin-section="admin-flights-section">Demandes de billets d’avion</button>
   <button type="button" data-admin-section="admin-projects-section">Projets soumis</button>
+  <button type="button" data-admin-section="admin-account-deletions-section">Suppressions de comptes</button>
   <button type="button" data-admin-section="admin-contracts-section">Contrats / Commissions</button>
   <button type="button" data-admin-section="admin-agents-section">Agents</button>
   <button type="button" data-admin-section="admin-transport-section">Transport / Livraison</button>
@@ -363,6 +371,13 @@
 
 <div id="admin-projects-section" class="admin-section">
   <div class="panel"><h3>Projets soumis</h3><div id="admin-projects"></div></div>
+</div>
+
+<div id="admin-account-deletions-section" class="admin-section">
+  <div class="panel"><div class="toolbar"><h3>Demandes de suppression de compte</h3><button class="light" id="admin-account-deletions-refresh" type="button">Actualiser</button></div>
+    <p class="muted">Traitez chaque demande sous 30 jours. Vérifiez l'identité du titulaire, supprimez son profil et ses données associées dans tous les modules, et ne conservez que les données légalement requises. Envoyez une confirmation à la personne après la suppression. Ne supprimez pas les commandes d'autres clients.</p>
+    <div id="admin-account-deletions"></div>
+  </div>
 </div>
 
 <div id="admin-contracts-section" class="admin-section">
@@ -1219,10 +1234,51 @@ async function updateClientSessionUI(){
     authPanel?.classList.add("hidden"); sessionPanel?.classList.remove("hidden"); requestPanel?.classList.remove("hidden"); feedbackPanel?.classList.remove("hidden");
     const label=$("client-session-email"); if(label)label.textContent=user.email||user.phone||"Compte Client connecté";
     const emailInput=$("client-request-form")?.elements?.client_email; if(emailInput && user.email && !emailInput.value)emailInput.value=user.email;
+    await loadAccountDeletionRequest(user.id);
   }else{
     authPanel?.classList.remove("hidden"); sessionPanel?.classList.add("hidden"); requestPanel?.classList.add("hidden"); feedbackPanel?.classList.add("hidden");
+    const message=$("account-deletion-message"); if(message)message.textContent="";
   }
 }
+async function loadAccountDeletionRequest(userId){
+  const button=$("request-account-deletion"), message=$("account-deletion-message");
+  if(!button||!message)return;
+  const {data,error}=await supabase.from("account_deletion_requests").select("requested_at").eq("user_id",userId).maybeSingle();
+  if(error){message.textContent="Impossible de vérifier la demande de suppression. Réessayez plus tard.";button.disabled=true;return;}
+  button.disabled=!!data;
+  message.textContent=data?`Demande reçue le ${new Date(data.requested_at).toLocaleDateString("fr-FR")}. Suppression en cours de traitement, sous 30 jours.`:"";
+}
+$("request-account-deletion")?.addEventListener("click",async()=>{
+  const button=$("request-account-deletion"),message=$("account-deletion-message");
+  const {data:{user},error:authError}=await supabase.auth.getUser();
+  if(authError||!user){message.textContent="Reconnectez-vous pour supprimer votre compte.";return;}
+  if(!confirm("Supprimer votre compte M&A Services et demander l'effacement de vos données personnelles ? Cette action est définitive une fois traitée."))return;
+  button.disabled=true;message.textContent="Enregistrement de votre demande…";
+  const {error}=await supabase.from("account_deletion_requests").insert({user_id:user.id,contact:user.email||user.phone||"Compte sans contact"});
+  if(error){
+    if(error.code==="23505"){await loadAccountDeletionRequest(user.id);return;}
+    message.textContent="La demande n'a pas été enregistrée. Réessayez plus tard.";button.disabled=false;return;
+  }
+  await loadAccountDeletionRequest(user.id);
+});
+async function loadAdminAccountDeletions(){
+  const box=$("admin-account-deletions");if(!box)return;
+  try{
+    await requireAdmin();
+    const {data,error}=await supabase.from("account_deletion_requests").select("user_id,contact,requested_at").order("requested_at",{ascending:true});
+    if(error)throw error;
+    box.replaceChildren();
+    if(!data?.length){box.textContent="Aucune demande en attente.";return;}
+    for(const request of data){
+      const row=document.createElement("div");row.className="row";
+      const title=document.createElement("strong");title.textContent=request.contact;
+      const details=document.createElement("div");details.textContent=`Identifiant : ${request.user_id} • Demande : ${new Date(request.requested_at).toLocaleString("fr-FR")}`;
+      row.append(title,details);box.append(row);
+    }
+  }catch(error){box.textContent="Impossible de charger les demandes : "+error.message;}
+}
+$("admin-account-deletions-refresh")?.addEventListener("click",loadAdminAccountDeletions);
+document.querySelector('[data-admin-section="admin-account-deletions-section"]')?.addEventListener("click",loadAdminAccountDeletions);
 $("client-signup-form")?.addEventListener("submit",async e=>{
   e.preventDefault();
   const result=await dualSignUp(supabase,e.target,$("client-auth-message"));
